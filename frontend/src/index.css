@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  
+  html, body, #root {
+    @apply h-full;
+    background-color: #0d0f1a;
+    color: #e2e8f0;
+    font-family: 'Inter', sans-serif;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #1c2036; }
+  ::-webkit-scrollbar-thumb { background: #3b5cf0; border-radius: 3px; }
+}
+
+@layer components {
+  /* ── Cards ────────────────────────────────────────────────────────────── */
+  .card {
+    @apply bg-surface-800 border border-white/5 rounded-xl p-4 shadow-xl;
+  }
+  .card-hover {
+    @apply card transition-all duration-200 hover:border-brand-500/40 hover:shadow-brand-500/10 cursor-pointer;
+  }
+
+  /* ── Severity badges ──────────────────────────────────────────────────── */
+  .badge-critical { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-500/20 text-red-400 border border-red-500/30; }
+  .badge-high     { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-orange-500/20 text-orange-400 border border-orange-500/30; }
+  .badge-medium   { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-yellow-500/20 text-yellow-400 border border-yellow-500/30; }
+  .badge-low      { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-500/20 text-blue-400 border border-blue-500/30; }
+
+  /* ── Source badges ──────────────────────────────────────────────────── */
+  .badge-rule     { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20; }
+  .badge-ai       { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20; }
+
+  /* ── Status badges ────────────────────────────────────────────────────── */
+  .badge-done      { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/15 text-green-400; }
+  .badge-reviewing { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-500/15 text-yellow-400; }
+  .badge-pending   { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-500/15 text-slate-400; }
+  .badge-error     { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/15 text-red-400; }
+
+  /* ── Buttons ──────────────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium 
+           transition-all duration-150 active:scale-95 shadow-lg shadow-brand-500/25;
+  }
+  .btn-ghost {
+    @apply px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-medium 
+           transition-all duration-150 border border-white/10;
+  }
+
+  /* ── Risk ring ────────────────────────────────────────────────────────── */
+  .risk-low      { @apply text-green-400; }
+  .risk-medium   { @apply text-yellow-400; }
+  .risk-high     { @apply text-orange-400; }
+  .risk-critical { @apply text-red-400; }
+}
+
+/* ── Glow effects ────────────────────────────────────────────────────────── */
+.glow-brand { box-shadow: 0 0 30px rgba(79, 114, 245, 0.15); }
+.glow-red   { box-shadow: 0 0 20px rgba(239, 68, 68, 0.2); }
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+.animate-fade-in-up { animation: fadeInUp 0.3s ease-out both; }
+.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }

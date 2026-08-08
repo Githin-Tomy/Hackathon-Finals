@@ -1,0 +1,31 @@
+name: AI Code Review Pipeline
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  ai-code-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Trigger AI Code Review Webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.CODE_REVIEW_WEBHOOK_URL }}
+          WEBHOOK_SECRET: ${{ secrets.CODE_REVIEW_WEBHOOK_SECRET }}
+        run: |
+          echo "Triggering AI Code Review Agent for PR #${{ github.event.number }}..."
+          curl -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: pull_request" \
+            -d '{
+              "action": "${{ github.event.action }}",
+              "number": ${{ github.event.number }},
+              "pull_request": {
+                "number": ${{ github.event.number }},
+                "head": { "sha": "${{ github.event.pull_request.head.sha }}" },
+                "base": { "repo": { "full_name": "${{ github.repository }}" } }
+              }
+            }'
