@@ -78,7 +78,9 @@ def _run_review_pipeline(
         file_contents = expand_context_by_symbols(repo_full_name, pr_number, diff_files, pr_file_contents)
         
         # Self-healing architecture context sync: Sync context if empty
-        repo = db.query(Repository).filter(Repository.id == db_pr_id).first()
+        repo = db.query(Repository).filter(Repository.id == db_pr.repo_id).first()
+        if not repo:
+            repo = db.query(Repository).filter(Repository.full_name == repo_full_name).first()
         if repo and (not repo.system_context or not repo.context_last_updated):
             logger.info("ℹ️ Repository context not initialized. Syncing context skeleton in background...")
             from analysis.parser.architecture_sync import sync_repo_context
@@ -161,7 +163,7 @@ def _run_review_pipeline(
             supervisor_output = run_supervisor(
                 modified_files=modified_files_paths,
                 file_contents=file_contents,
-                repo_name=repo.full_name,
+                repo_name=repo.full_name if repo else repo_full_name,
                 has_ci_failure=has_ci_failure,
                 ci_logs=ci_logs
             )

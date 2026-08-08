@@ -140,14 +140,17 @@ def _perform_github_sync(db: Session, background_tasks: BackgroundTasks) -> int:
                 db.add(db_pr)
                 db.flush()
 
-                background_tasks.add_task(
-                    _run_review_pipeline,
-                    repo_full_name=gh_repo.full_name,
-                    pr_number=gh_pr.number,
-                    commit_sha=gh_pr.head.sha,
-                    db_pr_id=db_pr.id,
-                    db=db,
-                )
+                import threading
+                threading.Thread(
+                    target=_run_review_pipeline,
+                    kwargs=dict(
+                        repo_full_name=gh_repo.full_name,
+                        pr_number=gh_pr.number,
+                        commit_sha=gh_pr.head.sha,
+                        db_pr_id=db_pr.id,
+                    ),
+                    daemon=True,
+                ).start()
 
     db.commit()
     return synced_count
