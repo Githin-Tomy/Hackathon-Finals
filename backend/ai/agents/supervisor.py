@@ -81,14 +81,26 @@ def code_review_node(state: ReviewState) -> ReviewState:
     architecture_context = ""
     if repo_name:
         try:
-            from analysis.parser.architecture_sync import query_architecture_context
+            from analysis.parser.architecture_sync import query_architecture_context, _chroma_manager
             contexts = []
+            file_contents = state.get("file_contents", {})
             for fpath in state.get("modified_files", []):
-                ctx = query_architecture_context(repo_name, fpath, n_results=2)
-                if ctx and ctx != "No matching architecture context.":
-                    contexts.append(f"Context for {fpath}:\n{ctx}")
+                snippet = file_contents.get(fpath, fpath)
+                # Pass first 600 chars of actual file code to compute vector embedding similarity
+                ctx = query_architecture_context(repo_name, snippet[:600], n_results=3)
+                if ctx and "No matching architecture context" not in ctx:
+                    contexts.append(f"Architectural Signatures for {fpath}:\n{ctx}")
             if contexts:
                 architecture_context = "\n\n---\n\n".join(contexts)
+            else:
+                # Fallback: Retrieve overall repository collection documents if available
+                try:
+                    coll = _chroma_manager.get_collection(repo_name)
+                    docs = coll.get()["documents"]
+                    if docs:
+                        architecture_context = "Repository Architectural Baseline Signatures:\n" + "\n\n".join(docs[:5])
+                except Exception:
+                    pass
         except Exception as e:
             logger.warning("Failed querying architecture context during review: %s", e)
 
@@ -118,10 +130,16 @@ def ci_node(state: ReviewState) -> ReviewState:
     dict_results = [
         {
             "rule_id": f.rule_id,
+            "rule_name": f.rule_name,
+            "category": f.category,
+            "severity": f.severity,
+            "confidence": f.confidence,
             "file_path": f.file_path,
             "line_number": f.line_number,
+            "code_snippet": f.code_snippet,
             "message": f.message,
             "suggestion": f.suggestion,
+            "source": f.source,
         }
         for f in results
     ]

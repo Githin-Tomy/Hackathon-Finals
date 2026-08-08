@@ -445,11 +445,13 @@ export default function PRDetailPage() {
   useEffect(() => {
     if (pr) {
       const finds = pr.findings || []
-      if (finds.length === 0 && pr.ai_summary) {
+      if (finds.length > 0) {
+        setActiveMainTab('findings')
+      } else if (finds.length === 0 && pr.ai_summary) {
         setActiveMainTab('summary')
       }
     }
-  }, [pr])
+  }, [pr?.id, pr?.findings?.length])
 
   useEffect(() => {
     if (!id) return
@@ -832,7 +834,11 @@ export default function PRDetailPage() {
 
           {/* Core Workflow Deviation Alert Callout */}
           {!isReviewing && (() => {
-            const archDeviations = findings.filter(f => f.rule_id === 'CS-ARCH-DEV');
+            const archDeviations = findings.filter(f => 
+              f.rule_id === 'CS-ARCH-DEV' || 
+              f.category === 'architecture' || 
+              (f.message && f.message.toLowerCase().includes('workflow deviation'))
+            );
             if (archDeviations.length > 0) {
               return (
                 <div className="card border-red-500/30 bg-red-500/5 p-5 space-y-3 relative overflow-hidden animate-fade-in shadow-[0_0_15px_rgba(239,68,68,0.1)]">
@@ -905,7 +911,7 @@ export default function PRDetailPage() {
               {isReviewing && findings.length === 0 && (
                 <div className="card border border-white/5 p-8 text-center space-y-3">
                   <Bot size={32} className="text-brand-400 mx-auto animate-pulse" />
-                  <p className="text-slate-400 font-medium">AI Agents are analysing the code…</p>
+                  <p className="text-slate-400 font-medium">AI Agents are analyzing the code…</p>
                   <p className="text-slate-600 text-xs">Findings will appear here as they are detected</p>
                 </div>
               )}

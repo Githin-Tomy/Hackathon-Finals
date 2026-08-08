@@ -175,8 +175,8 @@ def _run_review_pipeline(
                     file_path = file_path[2:]
                 line_number = r.get("line_number", 1)
                 
-                snippet = "N/A"
-                if file_path in file_contents:
+                snippet = r.get("code_snippet", "N/A")
+                if snippet == "N/A" and file_path in file_contents:
                     try:
                         lines = file_contents[file_path].split("\n")
                         start = max(0, line_number - 2)
@@ -187,16 +187,16 @@ def _run_review_pipeline(
                         
                 ai_findings.append(Finding(
                     rule_id=r.get("rule_id", "CI-ERR-001"),
-                    rule_name="CI/CD Log Analysis",
-                    category="ci_failure",
-                    severity="high",
-                    confidence=1.0,
+                    rule_name=r.get("rule_name", "CI/CD Log Analysis"),
+                    category=r.get("category", "ci_failure"),
+                    severity=r.get("severity", "high"),
+                    confidence=r.get("confidence", 1.0),
                     file_path=file_path,
                     line_number=line_number,
                     code_snippet=snippet,
                     message=r.get("message", "CI/CD failure detected."),
                     suggestion=r.get("suggestion", ""),
-                    source="ci"
+                    source=r.get("source", "ci")
                 ))
             
             # Process Security Agent findings from supervisor
@@ -246,17 +246,37 @@ def _run_review_pipeline(
                         snippet = "\n".join(lines[start:end])
                     except Exception:
                         pass
-                        
+
+                rule_id = str(r.get("rule_id", "CS-GEN-001"))
+                analysis_msg = str(r.get("analysis", "Code quality issue detected."))
+                category = str(r.get("category", "code_smell"))
+
+                # Detect core workflow deviation or architectural pattern violation
+                is_arch_dev = (
+                    rule_id in ("CS-ARCH-DEV", "ARCH-DEV", "ARCH_DEV", "CS_ARCH_DEV") or
+                    category == "architecture" or
+                    "workflow deviation" in analysis_msg.lower() or
+                    "architectural deviation" in analysis_msg.lower() or
+                    "core workflow" in analysis_msg.lower()
+                )
+
+                if is_arch_dev:
+                    rule_id = "CS-ARCH-DEV"
+                    category = "architecture"
+                    rule_name = "Core Workflow Deviation"
+                else:
+                    rule_name = "AI Code Review Analysis"
+
                 ai_findings.append(Finding(
-                    rule_id=r.get("rule_id", "CS-GEN-001"),
-                    rule_name="AI Code Review Analysis",
-                    category="code_smell",
-                    severity=r.get("severity", "medium"),
-                    confidence=r.get("confidence", 0.9),
+                    rule_id=rule_id,
+                    rule_name=rule_name,
+                    category=category,
+                    severity=r.get("severity", "high" if is_arch_dev else "medium"),
+                    confidence=r.get("confidence", 0.95 if is_arch_dev else 0.9),
                     file_path=file_path,
                     line_number=line_number,
                     code_snippet=snippet,
-                    message=r.get("analysis", "Code quality issue detected."),
+                    message=analysis_msg,
                     suggestion=r.get("suggestion", ""),
                     source="ai"
                 ))
@@ -274,6 +294,23 @@ def _run_review_pipeline(
                 message=f"The AI supervisor failed to complete the review: {supervisor_err}",
                 suggestion="Check your backend server logs or API credentials.",
                 source="ai"
+            ))
+
+        # Fallback guard: If CI failed, ensure at least one ci_failure finding is present
+        if has_ci_failure and not any(f.category in ("ci_failure", "ci_warning") or f.source == "ci" for f in ai_findings):
+            logger.info("   ⚠️ CI failed but no CI findings recorded. Appending fallback CI failure finding.")
+            ai_findings.append(Finding(
+                rule_id="CI-FAIL-001",
+                rule_name="Continuous Integration Failure",
+                category="ci_failure",
+                severity="critical",
+                confidence=1.0,
+                file_path="GitHub Actions",
+                line_number=1,
+                code_snippet="N/A",
+                message="GitHub Actions CI/CD check failed. Review workflow logs and test failures.",
+                suggestion="Inspect the failing build job directly in GitHub Actions and resolve failing test assertions.",
+                source="ci"
             ))
 
         all_findings = ai_findings

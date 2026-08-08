@@ -2,147 +2,124 @@
 CI/CD Failure Analyzer Agent
 Analyzes historical/synthetic CI failure logs to pinpoint root causes.
 """
+from __future__ import annotations
 import logging
-from langchain_core.messages import HumanMessage, SystemMessage
+from typing import Any
 
-from ai.llm import get_llm
+from ai.llm import run_llm_agent
 from analysis.rules.base import Finding
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are an expert DevOps engineer and Python developer.
-You will be provided with raw logs from a CI/CD build run (e.g. Flake8 linter warnings, Bandit SAST security scans, or Pytest test tracebacks).
+SYSTEM_PROMPT = """You are an expert DevOps engineer and Python developer analyzing CI/CD build logs.
+You will be provided with raw build logs (e.g. Pytest failures, assertion errors, Flake8 linting warnings, Bandit SAST security scans, or build tracebacks).
 
-Your goal is to parse these logs and extract:
-1. ANY critical build failures (like python syntax errors, failing test assertions, or failed build steps).
-2. ANY non-critical warnings (like unused variables, bare except blocks, formatting issues, or security alerts).
+Your goal is to parse these logs and extract all failures and warnings.
 
-For EACH issue you find, format it exactly as follows:
----
-SEVERITY: <critical | high | medium | low>
-CATEGORY: <ci_failure | ci_warning | sast_warning>
-RULE_ID: <a short identifier, e.g. FLAKE8-E722 or PYTEST-FAIL or BANDIT-B104>
-FILE: <file_path_relative_to_repo_root>
-LINE: <line_number_integer>
-MESSAGE: <explanation of the issue>
-SUGGESTION: <concrete, specific fix or code change recommended to resolve the error/warning>
----
+Respond ONLY with a valid JSON object with a key "results" containing an array. Each element must have:
+{
+  "rule_id": "<a short identifier, e.g. PYTEST-FAIL, FLAKE8-E722, BANDIT-B104, CI-ERR-001>",
+  "rule_name": "<human readable title, e.g. Unit Test Failure or Linter Warning>",
+  "category": "<ci_failure|ci_warning|sast_warning>",
+  "severity": "<critical|high|medium|low>",
+  "file_path": "<file path relative to repo root, or 'GitHub Actions'>",
+  "line_number": <line number integer, default 1 if unknown>,
+  "message": "<detailed 1-2 sentence explanation of the test/build failure>",
+  "suggestion": "<concrete fix recommendation or code snippet fix>"
+}
 
-If you find multiple issues, print multiple blocks separated by "---".
-Do not include any other markdown text or wrapper. If the build succeeded and there are no warnings or failures at all in the log, output "NO_ISSUES"."""
+Do not include any text outside the JSON object. If the logs are empty or no issues are found, return {"results": []}."""
+
 
 def run_ci_agent(log_text: str) -> list[Finding]:
     """
     Analyzes a CI/CD log and returns a list of Finding objects representing failures and warnings.
     """
     logger.info("   🔍 [CIAgent] Analyzing CI failure/warning logs...")
-    
-    try:
-        llm = get_llm()
-        messages = [
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=f"CI BUILD LOGS:\n\n{log_text}"),
+    if not log_text or not log_text.strip():
+        logger.warning("   ⚠️ [CIAgent] Log text is empty. Returning default CI failure finding.")
+        return [
+            Finding(
+                rule_id="CI-ERR-001",
+                rule_name="Continuous Integration Failure",
+                category="ci_failure",
+                severity="critical",
+                confidence=1.0,
+                file_path="GitHub Actions",
+                line_number=1,
+                code_snippet="N/A",
+                message="GitHub Actions CI/CD check failed, but build logs were empty or unavailable.",
+                suggestion="Inspect the failing build job directly in GitHub Actions.",
+                source="ci",
+            )
         ]
-        response = llm.invoke(messages)
-        raw_output = response.content.strip()
-        
-        logger.info("   🔍 [CIAgent] Parsing agent output...")
-        
-        if "NO_ISSUES" in raw_output:
-            logger.info("   🔍 [CIAgent] No issues found in logs.")
-            return []
-            
+
+    try:
+        raw_results = run_llm_agent(SYSTEM_PROMPT, f"CI BUILD LOGS:\n\n{log_text}", "🔍 [CIAgent]")
         findings: list[Finding] = []
-        blocks = raw_output.split("---")
-        
-        for block in blocks:
-            block = block.strip()
-            if not block or block == "---":
-                continue
-                
-            lines = block.split("\n")
-            severity = "medium"
-            category = "ci_warning"
-            rule_id = "CI-WARN-001"
-            file_path = "GitHub Actions"
-            line_number = 1
-            message_lines = []
-            suggestion_lines = []
-            current_field = None
-            
-            for line in lines:
-                line = line.strip()
-                if line.startswith("SEVERITY:"):
-                    severity = line.replace("SEVERITY:", "").strip().lower()
-                    current_field = None
-                elif line.startswith("CATEGORY:"):
-                    category = line.replace("CATEGORY:", "").strip().lower()
-                    current_field = None
-                elif line.startswith("RULE_ID:"):
-                    rule_id = line.replace("RULE_ID:", "").strip()
-                    current_field = None
-                elif line.startswith("FILE:"):
-                    val = line.replace("FILE:", "").strip()
-                    if val.startswith("./"):
-                        val = val[2:]
-                    file_path = val
-                    current_field = None
-                elif line.startswith("LINE:"):
-                    try:
-                        line_number = int(line.replace("LINE:", "").strip())
-                    except ValueError:
-                        pass
-                    current_field = None
-                elif line.startswith("MESSAGE:"):
-                    current_field = "message"
-                    val = line.replace("MESSAGE:", "").strip()
-                    if val:
-                        message_lines.append(val)
-                elif line.startswith("SUGGESTION:"):
-                    current_field = "suggestion"
-                    val = line.replace("SUGGESTION:", "").strip()
-                    if val:
-                        suggestion_lines.append(val)
-                elif current_field == "message":
-                    message_lines.append(line)
-                elif current_field == "suggestion":
-                    suggestion_lines.append(line)
-            
-            message = " ".join(message_lines).strip()
-            suggestion = " ".join(suggestion_lines).strip()
-            if not suggestion:
-                suggestion = "Review the CI/CD log finding above and apply the recommended fix."
-                
-            if message:
-                findings.append(Finding(
-                    rule_id=rule_id,
-                    rule_name="CI/CD Log Analysis",
-                    category=category,
-                    severity=severity,
+
+        for r in raw_results:
+            file_path = str(r.get("file_path", "GitHub Actions"))
+            if file_path.startswith("./"):
+                file_path = file_path[2:]
+
+            line_num = 1
+            try:
+                line_num = int(r.get("line_number", 1))
+            except (ValueError, TypeError):
+                line_num = 1
+
+            findings.append(
+                Finding(
+                    rule_id=str(r.get("rule_id", "CI-ERR-001")),
+                    rule_name=str(r.get("rule_name", "CI/CD Log Analysis")),
+                    category=str(r.get("category", "ci_failure")),
+                    severity=str(r.get("severity", "high")),
                     confidence=0.99,
                     file_path=file_path,
-                    line_number=line_number,
+                    line_number=line_num,
                     code_snippet="N/A",
-                    message=message,
-                    suggestion=suggestion,
-                    source="ai"
-                ))
-                
-        logger.info("   🔍 [CIAgent] Successfully parsed %d findings from CI logs.", len(findings))
+                    message=str(r.get("message", "CI/CD unit test or build failure detected.")),
+                    suggestion=str(r.get("suggestion", "Fix the failing assertion or syntax error reported in the build log.")),
+                    source="ci",
+                )
+            )
+
+        if not findings:
+            logger.info("   🔍 [CIAgent] LLM returned 0 findings. Creating fallback CI failure finding...")
+            findings.append(
+                Finding(
+                    rule_id="CI-FAIL-001",
+                    rule_name="Continuous Integration Failure",
+                    category="ci_failure",
+                    severity="critical",
+                    confidence=1.0,
+                    file_path="GitHub Actions",
+                    line_number=1,
+                    code_snippet="N/A",
+                    message="Unit tests or build checks failed in GitHub Actions. Review the workflow output.",
+                    suggestion="Check unit test assertions, dependencies, and environment setup.",
+                    source="ci",
+                )
+            )
+
+        logger.info("   🔍 [CIAgent] Successfully evaluated %d finding(s) from CI logs.", len(findings))
         return findings
-        
+
     except Exception as exc:
-        logger.error("   ❌ [CIAgent] LLM Call Failed: %s", exc, exc_info=True)
-        return [Finding(
-            rule_id="CI-FAIL-001",
-            rule_name="Continuous Integration Failure",
-            category="ci_failure",
-            severity="critical",
-            confidence=0.0,
-            file_path="GitHub Actions",
-            line_number=1,
-            code_snippet="N/A",
-            message="The CI/CD pipeline finished, but the AI log analyzer failed to parse the output.",
-            suggestion="Check GitHub Actions manually.",
-            source="ai"
-        )]
+        logger.error("   ❌ [CIAgent] Failed analyzing logs: %s", exc, exc_info=True)
+        return [
+            Finding(
+                rule_id="CI-FAIL-001",
+                rule_name="Continuous Integration Failure",
+                category="ci_failure",
+                severity="critical",
+                confidence=1.0,
+                file_path="GitHub Actions",
+                line_number=1,
+                code_snippet="N/A",
+                message=f"Unit tests failed in CI/CD pipeline. Log analysis error: {exc}",
+                suggestion="Inspect GitHub Actions workflow logs for exact failure details.",
+                source="ci",
+            )
+        ]
